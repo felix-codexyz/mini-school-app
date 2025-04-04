@@ -79,5 +79,5 @@ This project is a full-stack web application designed to allow users to register
 
 4.  **Verify Deployment**
     ```bash
-    curl -X POST <backend-endpoint> -H "Content-Type: application/json" -d '{"name":"John","email":"john@example.com"}'
+    curl -X POST <backend-endpoint> -H "Content-Type: application/json" -d '{"name":"John","email":"john@example.com","phone":"1234567890","program":"computer-science"}'
     ```
