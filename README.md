@@ -21,10 +21,6 @@ This project is a full-stack web application designed to allow users to register
   - Database: `dbName`.
   - Table: `users` (columns: `id`, `name`, `email`, `phone`, `program`, `created_at`).
 
----
-
-## What I Have Done
-
 1. **Backend Development**:
    - Created a Node.js/Express backend with the following files:
      - `index.js`: Main entry point, sets up the Express server and routes.
@@ -61,3 +57,17 @@ This project is a full-stack web application designed to allow users to register
    - Debugged issues with Secrets Manager and Parameter Store configuration.
    - Fixed validation errors (e.g., allowing spaces in names).
    - Tested the frontend by submitting the form and verifying success and error messages.
+  
+---
+
+## CLI Commands
+
+1.  **Deployment to S3 + CloudFront**: Build the app
+    ```bash
+    ## Creates a build/ folder with static files.
+    npm run build
+    ```
+
+2.  **Upload to S3**
+    ```bash
+    aws s3 sync build/ s3://<bucket-name>
