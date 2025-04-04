@@ -71,3 +71,13 @@ This project is a full-stack web application designed to allow users to register
 2.  **Upload to S3**
     ```bash
     aws s3 sync build/ s3://<bucket-name>
+
+3. **ZIP Backend Code**
+    ```bash
+    zip -r ../backend.zip . -x "*.git*" "node_modules/*"
+    ```
+
+4.  **Verify Deployment**
+    ```bash
+    curl -X POST <backend-endpoint> -H "Content-Type: application/json" -d '{"name":"John","email":"john@example.com"}'
+    ```
