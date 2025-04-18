@@ -12,7 +12,7 @@ const RegistrationForm = () => {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  const backendUrl = 'https://api.classof25.online/api/register'; // Update to your EB URL
+  const backendUrl = 'https://backend.classof25.online/api/register'; // Update to your EB URL
 
   const programs = [
     { value: '', label: 'Select a program' },
