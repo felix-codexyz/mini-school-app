@@ -72,39 +72,55 @@ pipeline {
                     def repoName = "${params.ECR_REPO_NAME}-${params.ENVIRONMENT.toLowerCase()}"
                     env.ECR_REPO_URL = "${params.AWS_ACCOUNT_ID}.dkr.ecr.${params.AWS_REGION}.amazonaws.com/${repoName}"
                     // Check if repository exists
-                    def repoResult = sh(script: """
+                    def repoOutput = sh(script: """
                         aws ecr describe-repositories \
                             --region ${params.AWS_REGION} \
                             --repository-names ${repoName} \
-                            --output json
-                    """, returnStatus: true, returnStdout: true)
-                    echo "repoResult type: ${repoResult.getClass().name}, value: ${repoResult}"
-                    if (repoResult.status != 0) {
-                        echo "ECR repository ${repoName} does not exist or access is denied. Attempting to create..."
-                        def createResult = sh(script: """
+                            --output json 2>/dev/null || echo '{}'
+                    """, returnStdout: true).trim()
+                    def repoJson = readJSON text: repoOutput
+                    if (!repoJson.repositories || repoJson.repositories.size() == 0) {
+                        echo "ECR repository ${repoName} does not exist. Creating..."
+                        def createOutput = sh(script: """
                             aws ecr create-repository \
                                 --region ${params.AWS_REGION} \
                                 --repository-name ${repoName} \
                                 --output json
-                        """, returnStatus: true, returnStdout: true)
-                        echo "createResult type: ${createResult.getClass().name}, value: ${createResult}"
-                        if (createResult.status != 0) {
-                            error "Failed to create ECR repository ${repoName}. Check permissions or if it already exists. Output: ${createResult.stdout.trim()}"
+                        """, returnStdout: true, returnStatus: true)
+                        if (createOutput != 0) {
+                            error "Failed to create ECR repository ${repoName}. Check permissions or if it already exists."
+                        }
+                        def createJson = readJSON text: sh(script: """
+                            aws ecr describe-repositories \
+                                --region ${params.AWS_REGION} \
+                                --repository-names ${repoName} \
+                                --output json
+                        """, returnStdout: true).trim()
+                        if (!createJson.repositories || createJson.repositories.size() == 0) {
+                            error "Created ECR repository ${repoName} but validation failed."
                         }
                         echo "ECR repository ${repoName} created successfully."
                     } else {
                         echo "ECR repository ${repoName} already exists."
                     }
                     // Validate repository exists
-                    def validateResult = sh(script: """
+                    def validateOutput = sh(script: """
                         aws ecr describe-repositories \
                             --region ${params.AWS_REGION} \
                             --repository-names ${repoName} \
                             --output json
-                    """, returnStatus: true, returnStdout: true)
-                    echo "validateResult type: ${validateResult.getClass().name}, value: ${validateResult}"
-                    if (validateResult.status != 0) {
-                        error "Failed to validate ECR repository ${repoName}. Check permissions. Output: ${validateResult.stdout.trim()}"
+                    """, returnStdout: true, returnStatus: true)
+                    if (validateOutput != 0) {
+                        error "Failed to validate ECR repository ${repoName}. Check permissions."
+                    }
+                    def validateJson = readJSON text: sh(script: """
+                        aws ecr describe-repositories \
+                            --region ${params.AWS_REGION} \
+                            --repository-names ${repoName} \
+                            --output json
+                    """, returnStdout: true).trim()
+                    if (!validateJson.repositories || validateJson.repositories.size() == 0) {
+                        error "ECR repository ${repoName} validation failed: Repository not found."
                     }
                 }
             }
@@ -117,24 +133,21 @@ pipeline {
                     // Build Docker image
                     sh "docker build -t my-app:${imageTag}-${env.BUILD_ID} ."
                     // Authenticate to ECR
-                    def loginResult = sh(script: """
+                    def loginStatus = sh(script: """
                         aws ecr get-login-password \
                             --region ${params.AWS_REGION} | \
                             docker login \
                                 --username AWS \
                                 --password-stdin ${params.AWS_ACCOUNT_ID}.dkr.ecr.${params.AWS_REGION}.amazonaws.com
-                    """, returnStatus: true, returnStdout: true)
-                    echo "loginResult type: ${loginResult.getClass().name}, value: ${loginResult}"
-                    if (loginResult.status != 0) {
-                        error "Failed to authenticate to ECR. Check permissions for ecr:GetAuthorizationToken. Output: ${loginResult.stdout.trim()}"
+                    """, returnStatus: true)
+                    if (loginStatus != 0) {
+                        error "Failed to authenticate to ECR. Check permissions for ecr:GetAuthorizationToken."
                     }
                     // Tag and push image
-                    sh "docker tag my-app:${imageTag}-${env.BUILD_ID} ${fullImage}"
-                    def pushResult = sh(script: "docker push ${fullImage}", returnStatus: true, returnStdout: true)
-                    echo "pushResult type: ${pushResult.getClass().name}, value: ${pushResult}"
-                    if (pushResult.status != 0) {
-                        error "Failed to push image to ${fullImage}. Check ECR permissions (e.g., ecr:PutImage). Output: ${pushResult.stdout.trim()}"
-                    }
+                    sh """
+                        docker tag my-app:${imageTag}-${env.BUILD_ID} ${fullImage}
+                        docker push ${fullImage}
+                    """
                 }
             }
         }
@@ -148,8 +161,7 @@ pipeline {
                             --query 'Reservations[0].Instances[0].State.Name' \
                             --output text
                     """, returnStdout: true, returnStatus: true)
-                    echo "instanceStatus type: ${instanceStatus.getClass().name}, value: ${instanceStatus}"
-                    if (instanceStatus.status != 0) {
+                    if (instanceStatus != 0) {
                         error "EC2 instance ${params.EC2_INSTANCE_ID} does not exist or is not accessible."
                     }
                     def state = sh(script: """
@@ -193,7 +205,7 @@ pipeline {
                     usernameVariable: 'SSH_USERNAME'
                 )]) {
                     script {
-                        // def repoName = "${params.ECR_REPO_NAME}-${params.ENVIRONMENT.toLowerCase()}"
+                        def repoName = "${params.ECR_REPO_NAME}-${params.ENVIRONMENT.toLowerCase()}"
                         def fullImage = "${env.ECR_REPO_URL}:${params.ENVIRONMENT.toLowerCase()}-${env.BUILD_ID}"
                         def containerName = "my-app-${params.ENVIRONMENT.toLowerCase()}"
                         // Create .ssh directory in workspace
@@ -202,7 +214,6 @@ pipeline {
                         def keyscanStatus = sh(script: """
                             timeout 10s ssh-keyscan -t rsa,ecdsa,ed25519 -H ${env.EC2_IP} >> ${env.WORKSPACE}/.ssh/known_hosts
                         """, returnStatus: true)
-                        echo "keyscanStatus type: ${keyscanStatus.getClass().name}, value: ${keyscanStatus}"
                         if (keyscanStatus != 0) {
                             error "Failed to fetch EC2 host key for ${env.EC2_IP}. Ensure the instance is reachable and SSH is enabled."
                         }
