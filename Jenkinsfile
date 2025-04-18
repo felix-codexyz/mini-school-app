@@ -114,21 +114,21 @@ pipeline {
                     // Build Docker image
                     sh "docker build -t my-app:${imageTag}-${env.BUILD_ID} ."
                     // Authenticate to ECR
-                    def loginStatus = sh(script: """
+                    def loginResult = sh(script: """
                         aws ecr get-login-password \
                             --region ${params.AWS_REGION} | \
                             docker login \
                                 --username AWS \
                                 --password-stdin ${params.AWS_ACCOUNT_ID}.dkr.ecr.${params.AWS_REGION}.amazonaws.com
-                    """, returnStatus: true, returnStdout: true).trim()
-                    if (loginStatus.status != 0) {
-                        error "Failed to authenticate to ECR. Check permissions for ecr:GetAuthorizationToken. Output: ${loginStatus.stdout}"
+                    """, returnStatus: true, returnStdout: true)
+                    if (loginResult.status != 0) {
+                        error "Failed to authenticate to ECR. Check permissions for ecr:GetAuthorizationToken. Output: ${loginResult.stdout.trim()}"
                     }
                     // Tag and push image
                     sh "docker tag my-app:${imageTag}-${env.BUILD_ID} ${fullImage}"
-                    def pushStatus = sh(script: "docker push ${fullImage}", returnStatus: true, returnStdout: true).trim()
-                    if (pushStatus.status != 0) {
-                        error "Failed to push image to ${fullImage}. Check ECR permissions (e.g., ecr:PutImage). Output: ${pushStatus.stdout}"
+                    def pushResult = sh(script: "docker push ${fullImage}", returnStatus: true, returnStdout: true)
+                    if (pushResult.status != 0) {
+                        error "Failed to push image to ${fullImage}. Check ECR permissions (e.g., ecr:PutImage). Output: ${pushResult.stdout.trim()}"
                     }
                 }
             }
@@ -187,7 +187,7 @@ pipeline {
                     usernameVariable: 'SSH_USERNAME'
                 )]) {
                     script {
-                        //def repoName = "${params.ECR_REPO_NAME}-${params.ENVIRONMENT.toLowerCase()}"
+                        // def repoName = "${params.ECR_REPO_NAME}-${params.ENVIRONMENT.toLowerCase()}"
                         def fullImage = "${env.ECR_REPO_URL}:${params.ENVIRONMENT.toLowerCase()}-${env.BUILD_ID}"
                         def containerName = "my-app-${params.ENVIRONMENT.toLowerCase()}"
                         // Create .ssh directory in workspace
