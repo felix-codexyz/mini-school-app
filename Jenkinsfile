@@ -174,9 +174,9 @@ pipeline {
                     usernameVariable: 'SSH_USERNAME'
                 )]) {
                     script {
-                        def repoName = "${params.ECR_REPO_NAME}-${params.ENVIRONMENT.toLowerCase()}"
-                        def fullImage = "${env.ECR_REPO_URL}:${params.ENVIRONMENT.toLowerCase()}"
-                        def containerName = "my-app-${params.ENVIRONMENT.toLowerCase()}"
+                        // def repoName = "${params.ECR_REPO_NAME}-${params.ENVIRONMENT.toLowerCase()}"
+                        def fullImage = "${env.ECR_REPO_URL}:${params.ENVIRONMENT.toLowerCase()}-${env.BUILD_ID}"
+                        def containerName = "my-app-${env.BUILD_ID}"
                         // Write SSH commands to a script
                         writeFile file: 'deploy.sh', text: """
                             #!/bin/bash
