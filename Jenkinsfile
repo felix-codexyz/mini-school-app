@@ -78,6 +78,7 @@ pipeline {
                             --repository-names ${repoName} \
                             --output json
                     """, returnStatus: true, returnStdout: true)
+                    echo "repoResult type: ${repoResult.getClass().name}, value: ${repoResult}"
                     if (repoResult.status != 0) {
                         echo "ECR repository ${repoName} does not exist or access is denied. Attempting to create..."
                         def createResult = sh(script: """
@@ -86,6 +87,7 @@ pipeline {
                                 --repository-name ${repoName} \
                                 --output json
                         """, returnStatus: true, returnStdout: true)
+                        echo "createResult type: ${createResult.getClass().name}, value: ${createResult}"
                         if (createResult.status != 0) {
                             error "Failed to create ECR repository ${repoName}. Check permissions or if it already exists. Output: ${createResult.stdout.trim()}"
                         }
@@ -100,6 +102,7 @@ pipeline {
                             --repository-names ${repoName} \
                             --output json
                     """, returnStatus: true, returnStdout: true)
+                    echo "validateResult type: ${validateResult.getClass().name}, value: ${validateResult}"
                     if (validateResult.status != 0) {
                         error "Failed to validate ECR repository ${repoName}. Check permissions. Output: ${validateResult.stdout.trim()}"
                     }
@@ -121,12 +124,14 @@ pipeline {
                                 --username AWS \
                                 --password-stdin ${params.AWS_ACCOUNT_ID}.dkr.ecr.${params.AWS_REGION}.amazonaws.com
                     """, returnStatus: true, returnStdout: true)
+                    echo "loginResult type: ${loginResult.getClass().name}, value: ${loginResult}"
                     if (loginResult.status != 0) {
                         error "Failed to authenticate to ECR. Check permissions for ecr:GetAuthorizationToken. Output: ${loginResult.stdout.trim()}"
                     }
                     // Tag and push image
                     sh "docker tag my-app:${imageTag}-${env.BUILD_ID} ${fullImage}"
                     def pushResult = sh(script: "docker push ${fullImage}", returnStatus: true, returnStdout: true)
+                    echo "pushResult type: ${pushResult.getClass().name}, value: ${pushResult}"
                     if (pushResult.status != 0) {
                         error "Failed to push image to ${fullImage}. Check ECR permissions (e.g., ecr:PutImage). Output: ${pushResult.stdout.trim()}"
                     }
@@ -143,6 +148,7 @@ pipeline {
                             --query 'Reservations[0].Instances[0].State.Name' \
                             --output text
                     """, returnStdout: true, returnStatus: true)
+                    echo "instanceStatus type: ${instanceStatus.getClass().name}, value: ${instanceStatus}"
                     if (instanceStatus.status != 0) {
                         error "EC2 instance ${params.EC2_INSTANCE_ID} does not exist or is not accessible."
                     }
@@ -196,6 +202,7 @@ pipeline {
                         def keyscanStatus = sh(script: """
                             timeout 10s ssh-keyscan -t rsa,ecdsa,ed25519 -H ${env.EC2_IP} >> ${env.WORKSPACE}/.ssh/known_hosts
                         """, returnStatus: true)
+                        echo "keyscanStatus type: ${keyscanStatus.getClass().name}, value: ${keyscanStatus}"
                         if (keyscanStatus != 0) {
                             error "Failed to fetch EC2 host key for ${env.EC2_IP}. Ensure the instance is reachable and SSH is enabled."
                         }
