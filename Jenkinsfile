@@ -2,12 +2,12 @@ pipeline {
     agent { label 'docker-node' } // Node with Docker and AWS CLI
     parameters {
         choice(name: 'ENVIRONMENT', choices: ['DEV', 'STAGING', 'PROD'], description: 'Target environment')
-        string(name: 'AWS_ACCOUNT_ID', defaultValue: '', description: 'Target AWS Account ID')
-        string(name: 'ROLE_NAME', defaultValue: 'JenkinsRole', description: 'IAM Role to assume in target account')
+        string(name: 'AWS_ACCOUNT_ID', defaultValue: '392102158411', description: 'Target AWS Account ID')
+        string(name: 'ROLE_NAME', defaultValue: 'OrganizationAccountAccessRole', description: 'IAM Role to assume in target account')
         string(name: 'AWS_REGION', defaultValue: 'us-east-1', description: 'AWS Region')
         string(name: 'ECR_REPO_NAME', defaultValue: 'my-app', description: 'Base ECR repository name')
-        string(name: 'EC2_INSTANCE_ID', defaultValue: '', description: 'EC2 Instance ID')
-        string(name: 'EC2_SSH_USER', defaultValue: 'ec2-user', description: 'SSH user for EC2 instance')
+        string(name: 'EC2_INSTANCE_ID', defaultValue: 'i-0fa1266b4dc575aa7', description: 'EC2 Instance ID')
+        string(name: 'EC2_SSH_USER', defaultValue: 'ubuntu', description: 'SSH user for EC2 instance')
     }
     stages {
         stage('Validate Input') {
