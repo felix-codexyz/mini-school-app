@@ -35,6 +35,9 @@ pipeline {
                     if (!params.EC2_SSH_USER) {
                         error "EC2_SSH_USER is required."
                     }
+                    if (!params.HOST_PORT || params.HOST_PORT ==~ /[^0-9]/ || params.HOST_PORT.toInteger() < 1 || params.HOST_PORT.toInteger() > 65535) {
+                        error "Invalid HOST_PORT. Must be a number between 1 and 65535."
+                    }
                 }
             }
         }
@@ -68,20 +71,25 @@ pipeline {
                 script {
                     def repoName = "${params.ECR_REPO_NAME}-${params.ENVIRONMENT.toLowerCase()}"
                     env.ECR_REPO_URL = "${params.AWS_ACCOUNT_ID}.dkr.ecr.${params.AWS_REGION}.amazonaws.com/${repoName}"
-                    def repoExists = sh(script: """
+                    // Check if repository exists
+                    def repoStatus = sh(script: """
                         aws ecr describe-repositories \
                             --region ${params.AWS_REGION} \
                             --repository-names ${repoName} \
-                            --output json 2>/dev/null || echo '{}'
-                    """, returnStdout: true).trim()
-                    if (repoExists == '{}') {
-                        echo "ECR repository ${repoName} does not exist. Creating..."
-                        sh """
+                            --output json
+                    """, returnStatus: true, returnStdout: true).trim()
+                    if (repoStatus.status != 0) {
+                        echo "ECR repository ${repoName} does not exist or access is denied. Attempting to create..."
+                        def createStatus = sh(script: """
                             aws ecr create-repository \
                                 --region ${params.AWS_REGION} \
                                 --repository-name ${repoName} \
                                 --output json
-                        """
+                        """, returnStatus: true, returnStdout: true).trim()
+                        if (createStatus.status != 0) {
+                            error "Failed to create ECR repository ${repoName}. Check permissions or if it already exists. Error: ${createStatus.stdout}"
+                        }
+                        echo "ECR repository ${repoName} created successfully."
                     } else {
                         echo "ECR repository ${repoName} already exists."
                     }
@@ -92,8 +100,8 @@ pipeline {
                             --repository-names ${repoName} \
                             --output json
                     """, returnStdout: true, returnStatus: true)
-                    if (validateRepo != 0) {
-                        error "Failed to validate ECR repository ${repoName}."
+                    if (validateRepo.status != 0) {
+                        error "Failed to validate ECR repository ${repoName}. Check permissions."
                     }
                 }
             }
@@ -106,18 +114,22 @@ pipeline {
                     // Build Docker image
                     sh "docker build -t my-app:${imageTag}-${env.BUILD_ID} ."
                     // Authenticate to ECR
-                    sh """
+                    def loginStatus = sh(script: """
                         aws ecr get-login-password \
                             --region ${params.AWS_REGION} | \
                             docker login \
                                 --username AWS \
                                 --password-stdin ${params.AWS_ACCOUNT_ID}.dkr.ecr.${params.AWS_REGION}.amazonaws.com
-                    """
+                    """, returnStatus: true, returnStdout: true).trim()
+                    if (loginStatus.status != 0) {
+                        error "Failed to authenticate to ECR. Check permissions for ecr:GetAuthorizationToken. Output: ${loginStatus.stdout}"
+                    }
                     // Tag and push image
-                    sh """
-                        docker tag my-app:${imageTag}-${env.BUILD_ID} ${fullImage}
-                        docker push ${fullImage}
-                    """
+                    sh "docker tag my-app:${imageTag}-${env.BUILD_ID} ${fullImage}"
+                    def pushStatus = sh(script: "docker push ${fullImage}", returnStatus: true, returnStdout: true).trim()
+                    if (pushStatus.status != 0) {
+                        error "Failed to push image to ${fullImage}. Check ECR permissions (e.g., ecr:PutImage). Output: ${pushStatus.stdout}"
+                    }
                 }
             }
         }
@@ -131,7 +143,7 @@ pipeline {
                             --query 'Reservations[0].Instances[0].State.Name' \
                             --output text
                     """, returnStdout: true, returnStatus: true)
-                    if (instanceStatus != 0) {
+                    if (instanceStatus.status != 0) {
                         error "EC2 instance ${params.EC2_INSTANCE_ID} does not exist or is not accessible."
                     }
                     def state = sh(script: """
@@ -175,9 +187,18 @@ pipeline {
                     usernameVariable: 'SSH_USERNAME'
                 )]) {
                     script {
-                        // def repoName = "${params.ECR_REPO_NAME}-${params.ENVIRONMENT.toLowerCase()}"
+                        //def repoName = "${params.ECR_REPO_NAME}-${params.ENVIRONMENT.toLowerCase()}"
                         def fullImage = "${env.ECR_REPO_URL}:${params.ENVIRONMENT.toLowerCase()}-${env.BUILD_ID}"
                         def containerName = "my-app-${params.ENVIRONMENT.toLowerCase()}"
+                        // Create .ssh directory in workspace
+                        sh "mkdir -p ${env.WORKSPACE}/.ssh"
+                        // Generate known_hosts file non-interactively
+                        def keyscanStatus = sh(script: """
+                            timeout 10s ssh-keyscan -t rsa,ecdsa,ed25519 -H ${env.EC2_IP} >> ${env.WORKSPACE}/.ssh/known_hosts
+                        """, returnStatus: true)
+                        if (keyscanStatus != 0) {
+                            error "Failed to fetch EC2 host key for ${env.EC2_IP}. Ensure the instance is reachable and SSH is enabled."
+                        }
                         // Write SSH commands to a script
                         writeFile file: 'deploy.sh', text: """
                             #!/bin/bash
@@ -187,20 +208,23 @@ pipeline {
                                 docker login --username AWS --password-stdin ${params.AWS_ACCOUNT_ID}.dkr.ecr.${params.AWS_REGION}.amazonaws.com
                             # Pull the new image
                             docker pull ${fullImage}
+                            # Clean up previous images (keep the newly pulled image)
+                            docker images ${env.ECR_REPO_URL} --format '{{.Tag}}' | grep -v "${params.ENVIRONMENT.toLowerCase()}-${env.BUILD_ID}" | xargs -I {} docker rmi ${env.ECR_REPO_URL}:{} || true
                             # Stop and remove existing container (if any)
                             docker stop ${containerName} || true
                             docker rm ${containerName} || true
                             # Run the new container
                             docker run -d --name ${containerName} -p ${params.HOST_PORT}:80 ${fullImage}
-                            # Prune unused containers and images
-                            docker system prune -af || true
+                            # Prune unused containers
+                            docker system prune -f || true
                         """
                         // Copy and execute script on EC2
                         sh """
                             chmod 600 \$SSH_KEY
-                            scp -i \$SSH_KEY -o StrictHostKeyChecking=no deploy.sh ${params.EC2_SSH_USER}@${env.EC2_IP}:~/deploy.sh
-                            ssh -i \$SSH_KEY -o StrictHostKeyChecking=no ${params.EC2_SSH_USER}@${env.EC2_IP} 'chmod +x ~/deploy.sh && ~/deploy.sh'
+                            scp -i \$SSH_KEY -o UserKnownHostsFile=${env.WORKSPACE}/.ssh/known_hosts deploy.sh ${params.EC2_SSH_USER}@${env.EC2_IP}:~/deploy.sh
+                            ssh -i \$SSH_KEY -o UserKnownHostsFile=${env.WORKSPACE}/.ssh/known_hosts ${params.EC2_SSH_USER}@${env.EC2_IP} 'chmod +x ~/deploy.sh && ~/deploy.sh'
                             rm -f \$SSH_KEY
+                            rm -rf ${env.WORKSPACE}/.ssh
                         """
                     }
                 }
@@ -214,7 +238,6 @@ pipeline {
         always {
             // Clean up temporary credentials
             script {
-                // Remove SSH key if it exists
                 env.AWS_ACCESS_KEY_ID = ''
                 env.AWS_SECRET_ACCESS_KEY = ''
                 env.AWS_SESSION_TOKEN = ''
