@@ -72,36 +72,36 @@ pipeline {
                     def repoName = "${params.ECR_REPO_NAME}-${params.ENVIRONMENT.toLowerCase()}"
                     env.ECR_REPO_URL = "${params.AWS_ACCOUNT_ID}.dkr.ecr.${params.AWS_REGION}.amazonaws.com/${repoName}"
                     // Check if repository exists
-                    def repoStatus = sh(script: """
+                    def repoResult = sh(script: """
                         aws ecr describe-repositories \
                             --region ${params.AWS_REGION} \
                             --repository-names ${repoName} \
                             --output json
-                    """, returnStatus: true, returnStdout: true).trim()
-                    if (repoStatus.status != 0) {
+                    """, returnStatus: true, returnStdout: true)
+                    if (repoResult.status != 0) {
                         echo "ECR repository ${repoName} does not exist or access is denied. Attempting to create..."
-                        def createStatus = sh(script: """
+                        def createResult = sh(script: """
                             aws ecr create-repository \
                                 --region ${params.AWS_REGION} \
                                 --repository-name ${repoName} \
                                 --output json
-                        """, returnStatus: true, returnStdout: true).trim()
-                        if (createStatus.status != 0) {
-                            error "Failed to create ECR repository ${repoName}. Check permissions or if it already exists. Error: ${createStatus.stdout}"
+                        """, returnStatus: true, returnStdout: true)
+                        if (createResult.status != 0) {
+                            error "Failed to create ECR repository ${repoName}. Check permissions or if it already exists. Output: ${createResult.stdout.trim()}"
                         }
                         echo "ECR repository ${repoName} created successfully."
                     } else {
                         echo "ECR repository ${repoName} already exists."
                     }
                     // Validate repository exists
-                    def validateRepo = sh(script: """
+                    def validateResult = sh(script: """
                         aws ecr describe-repositories \
                             --region ${params.AWS_REGION} \
                             --repository-names ${repoName} \
                             --output json
-                    """, returnStdout: true, returnStatus: true)
-                    if (validateRepo.status != 0) {
-                        error "Failed to validate ECR repository ${repoName}. Check permissions."
+                    """, returnStatus: true, returnStdout: true)
+                    if (validateResult.status != 0) {
+                        error "Failed to validate ECR repository ${repoName}. Check permissions. Output: ${validateResult.stdout.trim()}"
                     }
                 }
             }
