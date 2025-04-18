@@ -114,7 +114,7 @@ pipeline {
                     """
                     // Tag and push image
                     sh """
-                        docker tag my-app:${imageTag} ${fullImage}
+                        docker tag my-app:${imageTag}-${env.BUILD_ID} ${fullImage}
                         docker push ${fullImage}
                     """
                 }
