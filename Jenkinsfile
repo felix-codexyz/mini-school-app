@@ -127,15 +127,16 @@ pipeline {
             steps {
                 script {
                     // Single API call to get instance details
-                    def instanceOutput = sh(script: """
+                    def instanceResult = sh(script: """
                         aws ec2 describe-instances \
                             --region ${params.AWS_REGION} \
                             --instance-ids ${params.EC2_INSTANCE_ID} \
                             --output json
-                    """, returnStdout: true, returnStatus: true).trim()
-                    if (instanceOutput.status != 0) {
+                    """, returnStdout: true, returnStatus: true)
+                    if (instanceResult.status != 0) {
                         error "EC2 instance ${params.EC2_INSTANCE_ID} does not exist or is not accessible."
                     }
+                    def instanceOutput = instanceResult.stdout.trim()
                     def instanceJson = readJSON text: instanceOutput
                     if (!instanceJson.Reservations || instanceJson.Reservations.size() == 0 || !instanceJson.Reservations[0].Instances || instanceJson.Reservations[0].Instances.size() == 0) {
                         error "EC2 instance ${params.EC2_INSTANCE_ID} not found."
