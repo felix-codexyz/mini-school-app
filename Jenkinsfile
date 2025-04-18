@@ -214,7 +214,6 @@ pipeline {
         always {
             // Clean up temporary credentials
             script {
-                sh "docker system prune -af || true"
                 // Remove SSH key if it exists
                 env.AWS_ACCESS_KEY_ID = ''
                 env.AWS_SECRET_ACCESS_KEY = ''
