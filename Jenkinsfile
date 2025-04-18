@@ -81,46 +81,18 @@ pipeline {
                     def repoJson = readJSON text: repoOutput
                     if (!repoJson.repositories || repoJson.repositories.size() == 0) {
                         echo "ECR repository ${repoName} does not exist. Creating..."
-                        def createOutput = sh(script: """
+                        def createStatus = sh(script: """
                             aws ecr create-repository \
                                 --region ${params.AWS_REGION} \
                                 --repository-name ${repoName} \
                                 --output json
-                        """, returnStdout: true, returnStatus: true)
-                        if (createOutput != 0) {
+                        """, returnStatus: true)
+                        if (createStatus != 0) {
                             error "Failed to create ECR repository ${repoName}. Check permissions or if it already exists."
-                        }
-                        def createJson = readJSON text: sh(script: """
-                            aws ecr describe-repositories \
-                                --region ${params.AWS_REGION} \
-                                --repository-names ${repoName} \
-                                --output json
-                        """, returnStdout: true).trim()
-                        if (!createJson.repositories || createJson.repositories.size() == 0) {
-                            error "Created ECR repository ${repoName} but validation failed."
                         }
                         echo "ECR repository ${repoName} created successfully."
                     } else {
                         echo "ECR repository ${repoName} already exists."
-                    }
-                    // Validate repository exists
-                    def validateOutput = sh(script: """
-                        aws ecr describe-repositories \
-                            --region ${params.AWS_REGION} \
-                            --repository-names ${repoName} \
-                            --output json
-                    """, returnStdout: true, returnStatus: true)
-                    if (validateOutput != 0) {
-                        error "Failed to validate ECR repository ${repoName}. Check permissions."
-                    }
-                    def validateJson = readJSON text: sh(script: """
-                        aws ecr describe-repositories \
-                            --region ${params.AWS_REGION} \
-                            --repository-names ${repoName} \
-                            --output json
-                    """, returnStdout: true).trim()
-                    if (!validateJson.repositories || validateJson.repositories.size() == 0) {
-                        error "ECR repository ${repoName} validation failed: Repository not found."
                     }
                 }
             }
@@ -154,43 +126,25 @@ pipeline {
         stage('Validate EC2 Instance') {
             steps {
                 script {
-                    def instanceStatus = sh(script: """
+                    // Single API call to get instance details
+                    def instanceOutput = sh(script: """
                         aws ec2 describe-instances \
                             --region ${params.AWS_REGION} \
                             --instance-ids ${params.EC2_INSTANCE_ID} \
-                            --query 'Reservations[0].Instances[0].State.Name' \
-                            --output text
-                    """, returnStdout: true, returnStatus: true)
-                    if (instanceStatus != 0) {
+                            --output json
+                    """, returnStdout: true, returnStatus: true).trim()
+                    if (instanceOutput.status != 0) {
                         error "EC2 instance ${params.EC2_INSTANCE_ID} does not exist or is not accessible."
                     }
-                    def state = sh(script: """
-                        aws ec2 describe-instances \
-                            --region ${params.AWS_REGION} \
-                            --instance-ids ${params.EC2_INSTANCE_ID} \
-                            --query 'Reservations[0].Instances[0].State.Name' \
-                            --output text
-                    """, returnStdout: true).trim()
+                    def instanceJson = readJSON text: instanceOutput
+                    if (!instanceJson.Reservations || instanceJson.Reservations.size() == 0 || !instanceJson.Reservations[0].Instances || instanceJson.Reservations[0].Instances.size() == 0) {
+                        error "EC2 instance ${params.EC2_INSTANCE_ID} not found."
+                    }
+                    def state = instanceJson.Reservations[0].Instances[0].State.Name
                     if (state != 'running') {
                         error "EC2 instance ${params.EC2_INSTANCE_ID} is not in 'running' state. Current state: ${state}"
                     }
-                    // Get public/private IP for SSH
-                    env.EC2_IP = sh(script: """
-                        aws ec2 describe-instances \
-                            --region ${params.AWS_REGION} \
-                            --instance-ids ${params.EC2_INSTANCE_ID} \
-                            --query 'Reservations[0].Instances[0].PublicIpAddress' \
-                            --output text
-                    """, returnStdout: true).trim()
-                    if (!env.EC2_IP) {
-                        env.EC2_IP = sh(script: """
-                            aws ec2 describe-instances \
-                                --region ${params.AWS_REGION} \
-                                --instance-ids ${params.EC2_INSTANCE_ID} \
-                                --query 'Reservations[0].Instances[0].PrivateIpAddress' \
-                                --output text
-                        """, returnStdout: true).trim()
-                    }
+                    env.EC2_IP = instanceJson.Reservations[0].Instances[0].PublicIpAddress ?: instanceJson.Reservations[0].Instances[0].PrivateIpAddress
                     if (!env.EC2_IP) {
                         error "Could not retrieve IP address for EC2 instance ${params.EC2_INSTANCE_ID}."
                     }
@@ -205,7 +159,6 @@ pipeline {
                     usernameVariable: 'SSH_USERNAME'
                 )]) {
                     script {
-                        def repoName = "${params.ECR_REPO_NAME}-${params.ENVIRONMENT.toLowerCase()}"
                         def fullImage = "${env.ECR_REPO_URL}:${params.ENVIRONMENT.toLowerCase()}-${env.BUILD_ID}"
                         def containerName = "my-app-${params.ENVIRONMENT.toLowerCase()}"
                         // Create .ssh directory in workspace
