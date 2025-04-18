@@ -41,6 +41,14 @@ pipeline {
                 }
             }
         }
+        stage('stsInitial') {
+            steps {
+                script {
+                    // Initialize AWS CLI with default region
+                    sh "aws sts get-caller-identity --output json"
+                }
+            }
+        }
         stage('Assume Role') {
             steps {
                 withCredentials([[
@@ -63,6 +71,14 @@ pipeline {
                         env.AWS_SECRET_ACCESS_KEY = stsJson.Credentials.SecretAccessKey
                         env.AWS_SESSION_TOKEN = stsJson.Credentials.SessionToken
                     }
+                }
+            }
+        }
+        stage('stsInitial02') {
+            steps {
+                script {
+                    // Initialize AWS CLI with default region
+                    sh "aws sts get-caller-identity --output json"
                 }
             }
         }
@@ -156,6 +172,14 @@ pipeline {
                     if (!env.EC2_IP) {
                         error "Could not retrieve IP address for EC2 instance ${params.EC2_INSTANCE_ID}."
                     }
+                }
+            }
+        }
+        stage('stsInitial03') {
+            steps {
+                script {
+                    // Initialize AWS CLI with default region
+                    sh "aws sts get-caller-identity --output json"
                 }
             }
         }
