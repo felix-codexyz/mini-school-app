@@ -126,17 +126,24 @@ pipeline {
         stage('Validate EC2 Instance') {
             steps {
                 script {
-                    // Single API call to get instance details
-                    def instanceResult = sh(script: """
+                    // Check instance accessibility
+                    def instanceStatus = sh(script: """
+                        aws ec2 describe-instances \
+                            --region ${params.AWS_REGION} \
+                            --instance-ids ${params.EC2_INSTANCE_ID} \
+                            --query 'Reservations[0].Instances[0].State.Name' \
+                            --output text
+                    """, returnStdout: true, returnStatus: true)
+                    if (instanceStatus != 0) {
+                        error "EC2 instance ${params.EC2_INSTANCE_ID} does not exist or is not accessible."
+                    }
+                    // Get instance details
+                    def instanceOutput = sh(script: """
                         aws ec2 describe-instances \
                             --region ${params.AWS_REGION} \
                             --instance-ids ${params.EC2_INSTANCE_ID} \
                             --output json
-                    """, returnStdout: true, returnStatus: true)
-                    if (instanceResult.status != 0) {
-                        error "EC2 instance ${params.EC2_INSTANCE_ID} does not exist or is not accessible."
-                    }
-                    def instanceOutput = instanceResult.stdout.trim()
+                    """, returnStdout: true).trim()
                     def instanceJson = readJSON text: instanceOutput
                     if (!instanceJson.Reservations || instanceJson.Reservations.size() == 0 || !instanceJson.Reservations[0].Instances || instanceJson.Reservations[0].Instances.size() == 0) {
                         error "EC2 instance ${params.EC2_INSTANCE_ID} not found."
