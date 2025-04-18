@@ -3,11 +3,12 @@ pipeline {
     parameters {
         choice(name: 'ENVIRONMENT', choices: ['DEV', 'STAGING', 'PROD'], description: 'Target environment')
         string(name: 'AWS_ACCOUNT_ID', defaultValue: '392102158411', description: 'Target AWS Account ID')
-        string(name: 'ROLE_NAME', defaultValue: 'OrganizationAccountAccessRole', description: 'IAM Role to assume in target account')
+        string(name: 'ROLE_NAME', defaultValue: 'CrossAccountRole', description: 'IAM Role to assume in target account')
         string(name: 'AWS_REGION', defaultValue: 'us-east-1', description: 'AWS Region')
         string(name: 'ECR_REPO_NAME', defaultValue: 'my-app', description: 'Base ECR repository name')
         string(name: 'EC2_INSTANCE_ID', defaultValue: 'i-0fa1266b4dc575aa7', description: 'EC2 Instance ID')
         string(name: 'EC2_SSH_USER', defaultValue: 'ubuntu', description: 'SSH user for EC2 instance')
+        string(name: 'HOST_PORT', defaultValue: '80', description: 'Host port for the Docker container')
     }
     stages {
         stage('Validate Input') {
@@ -41,7 +42,7 @@ pipeline {
             steps {
                 withCredentials([[
                     $class: 'AmazonWebServicesCredentialsBinding',
-                    credentialsId: 'management-account-iam-user',
+                    credentialsId: 'sts-user',
                     accessKeyVariable: 'AWS_ACCESS_KEY_ID',
                     secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
                 ]]) {
@@ -176,7 +177,7 @@ pipeline {
                     script {
                         // def repoName = "${params.ECR_REPO_NAME}-${params.ENVIRONMENT.toLowerCase()}"
                         def fullImage = "${env.ECR_REPO_URL}:${params.ENVIRONMENT.toLowerCase()}-${env.BUILD_ID}"
-                        def containerName = "my-app-${env.BUILD_ID}"
+                        def containerName = "my-app-${params.ENVIRONMENT.toLowerCase()}"
                         // Write SSH commands to a script
                         writeFile file: 'deploy.sh', text: """
                             #!/bin/bash
@@ -190,7 +191,9 @@ pipeline {
                             docker stop ${containerName} || true
                             docker rm ${containerName} || true
                             # Run the new container
-                            docker run -d --name ${containerName} -p 80:80 ${fullImage}
+                            docker run -d --name ${containerName} -p ${params.HOST_PORT}:80 ${fullImage}
+                            # Prune unused containers and images
+                            docker system prune -af || true
                         """
                         // Copy and execute script on EC2
                         sh """
@@ -211,6 +214,8 @@ pipeline {
         always {
             // Clean up temporary credentials
             script {
+                sh "docker system prune -af || true"
+                // Remove SSH key if it exists
                 env.AWS_ACCESS_KEY_ID = ''
                 env.AWS_SECRET_ACCESS_KEY = ''
                 env.AWS_SESSION_TOKEN = ''
