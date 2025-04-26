@@ -172,6 +172,7 @@ pipeline {
                     if (!env.EC2_IP) {
                         error "Could not retrieve IP address for EC2 instance ${params.EC2_INSTANCE_ID}."
                     }
+                    echo "EC2 instance ${params.EC2_INSTANCE_ID} is running with IP address ${env.EC2_IP}."
                 }
             }
         }
