@@ -21,6 +21,7 @@ const RegistrationForm = () => {
     { value: 'business', label: 'Business' },
     { value: 'arts', label: 'Arts' },
     { value: 'medicine', label: 'Medicine' },
+    { value: 'cloud engineering', label: 'Cloud Engineering' }
   ];
 
   const handleSubmit = async (e) => {
