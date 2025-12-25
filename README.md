@@ -10,7 +10,7 @@ This Jenkins pipeline automates the deployment of a Dockerized React application
 - Deploys the image to a pre-existing EC2 instance via secure SSH with `known_hosts`.
 - Validates inputs and AWS resources to ensure reliable execution.
 
-The pipeline is parameterized for flexibility, allowing users to specify the target environment, AWS account details, EC2 instance information, and host port.
+The pipeline is parameterized for flexibility, allowing users to specify the target environment, AWS account details, EC2 instance information, and host port
 
 ## Prerequisites
 
